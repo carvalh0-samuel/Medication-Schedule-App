@@ -28,3 +28,6 @@ Expo Notifications (Gestão de alarmes nativos)
 Vector Icons (@expo/vector-icons)
 
 EAS Build (Compilação e geração de APK para Android)
+
+# 📱 Capturas de Tela:
+<img src="./screenshots/screenshot_01.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_02.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_03.jpeg" alt="Tela Principal" width="300" />
