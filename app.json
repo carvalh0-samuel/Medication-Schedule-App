@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Gestão de Medicamentos",
+    "slug": "app-medicamentos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icone.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icone.png",
+        "backgroundColor": "#0EA5E9"
+      },
+      "package": "com.carvalh0_samuel.appmedicamentos"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-status-bar"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bb3fb494-dc34-44e3-bcb2-e8a55700605b"
+      }
+    }
+  }
+}
