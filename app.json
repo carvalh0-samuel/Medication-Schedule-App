@@ -25,7 +25,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
