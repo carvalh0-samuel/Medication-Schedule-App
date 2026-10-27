@@ -57,4 +57,4 @@ O dia só é arquivado no histórico quando o app é aberto ou volta ao primeiro
 Os lembretes dependem das permissões de notificação e das otimizações de bateria do aparelho.
 
 # 📱 Capturas de Tela:
-<img src="./screenshots/screenshot_01.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_02.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_03.jpeg" alt="Tela Principal" width="300" />
+<img src="./screenshots/screenshot_01.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_02.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_03.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_04.jpeg" alt="Tela Principal" width="200" />
