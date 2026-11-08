@@ -12,6 +12,25 @@ export const subtrairDias = (dias) => {
   return formatarData(d);
 };
 
+// 'AAAA-MM-DD' -> Date (meia-noite, horário local)
+export const dataParaDate = (str) => {
+  const [a, m, d] = str.split('-').map(Number);
+  return new Date(a, m - 1, d);
+};
+
+// Datas entre duas datas, sem incluir nenhuma das duas (ex.: dias em que o app não foi aberto)
+export const diasEntre = (inicioExclusivo, fimExclusivo) => {
+  const dias = [];
+  const dia = dataParaDate(inicioExclusivo);
+  const fim = dataParaDate(fimExclusivo);
+  dia.setDate(dia.getDate() + 1);
+  while (dia < fim && dias.length < 400) {
+    dias.push(formatarData(dia));
+    dia.setDate(dia.getDate() + 1);
+  }
+  return dias;
+};
+
 // Último dia do tratamento (o dia do cadastro conta como o dia 1)
 export const dataFimTratamento = (dias) => {
   const d = new Date();
