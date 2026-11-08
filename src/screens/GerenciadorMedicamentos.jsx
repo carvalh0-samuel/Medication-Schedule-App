@@ -8,7 +8,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import CardMedicamento from '../components/CardMedicamento';
 import ModalMedicamento from '../components/ModalMedicamento';
-import { hojeStr, dataFimTratamento, horarioParaDate, estaAtrasado } from '../utils/datas';
+import {
+  hojeStr, formatarData, dataFimTratamento, horarioParaDate, estaAtrasado, dataParaDate, diasEntre
+} from '../utils/datas';
 import { estoqueBaixo, textoDiasEstoque, DIAS_ALERTA_ESTOQUE } from '../utils/estoque';
 
 const STORAGE_KEY = '@medicamentos_app';
@@ -18,6 +20,8 @@ const CANAL_ANDROID = 'lembretes-medicamentos';
 const CATEGORIA_LEMBRETE = 'lembrete-dose';
 const ACAO_TOMEI = 'TOMEI';
 const MAX_DIAS_HISTORICO = 90;
+// Acima disso (tratamentos muito longos) volta a usar o lembrete diário simples
+const MAX_NOTIFICACOES_POR_HORARIO = 100;
 
 const AVISO_LEGAL =
   'Este aplicativo é um lembrete de apoio e não substitui a orientação de um médico ou farmacêutico. ' +
@@ -53,11 +57,16 @@ const gerarHorariosPorIntervalo = (horarioInicial, intervaloHoras) => {
   return [...new Set(horariosGerados)];
 };
 
+// Um horário pode ter vários lembretes agendados (um por dia, nos tratamentos por dias).
+// `notificacaoId` (singular) existe só em itens criados por versões antigas.
+const idsDeNotificacao = (med) =>
+  [...(med.notificacaoIds || []), med.notificacaoId].filter(Boolean);
+
 const cancelarNotificacoes = async (lista) => {
   for (const med of lista) {
-    if (med.notificacaoId) {
+    for (const id of idsDeNotificacao(med)) {
       try {
-        await Notifications.cancelScheduledNotificationAsync(med.notificacaoId);
+        await Notifications.cancelScheduledNotificationAsync(id);
       } catch (error) {
         console.error('Erro ao cancelar notificação:', error);
       }
@@ -65,30 +74,63 @@ const cancelarNotificacoes = async (lista) => {
   }
 };
 
-// Agenda um lembrete diário com o botão "Tomei" e devolve o id (para poder cancelar depois)
-const agendarNotificacao = async (nomeMed, doseMed, horarioStr, itemId) => {
+// Agenda os lembretes de um horário (com o botão "Tomei") e devolve a lista de ids para cancelar depois.
+// - Tratamento por dias: um lembrete para cada dia até o último dia, então ele para sozinho
+//   mesmo que o app nunca mais seja aberto.
+// - Demais casos: um lembrete diário que se repete.
+const agendarLembretes = async (nomeMed, doseMed, horarioStr, itemId, duracao) => {
   const [h, m] = horarioStr.split(':').map(Number);
+  const content = {
+    title: 'Hora do remédio! 💊',
+    body: `Está na hora de tomar ${nomeMed} (${doseMed}).`,
+    sound: true,
+    // nome e horário permitem registrar a dose no dia certo se o "Tomei" for tocado só no dia seguinte
+    data: { itemId, nome: nomeMed, horario: horarioStr },
+    categoryIdentifier: CATEGORIA_LEMBRETE,
+  };
+  const ids = [];
 
   try {
-    return await Notifications.scheduleNotificationAsync({
-      content: {
-        title: 'Hora do remédio! 💊',
-        body: `Está na hora de tomar ${nomeMed} (${doseMed}).`,
-        sound: true,
-        data: { itemId },
-        categoryIdentifier: CATEGORIA_LEMBRETE,
-      },
+    if (duracao?.tipo === 'dias' && duracao.fim) {
+      const agora = new Date();
+      const ultimoDia = dataParaDate(duracao.fim);
+      const dia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+      const datas = [];
+      while (dia <= ultimoDia) {
+        const quando = new Date(dia);
+        quando.setHours(h, m, 0, 0);
+        if (quando > agora) datas.push(quando); // horários de hoje que já passaram ficam de fora
+        dia.setDate(dia.getDate() + 1);
+      }
+
+      if (datas.length <= MAX_NOTIFICACOES_POR_HORARIO) {
+        for (const quando of datas) {
+          ids.push(await Notifications.scheduleNotificationAsync({
+            content,
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: quando,
+              channelId: CANAL_ANDROID,
+            },
+          }));
+        }
+        return ids;
+      }
+    }
+
+    ids.push(await Notifications.scheduleNotificationAsync({
+      content,
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: h,
         minute: m,
         channelId: CANAL_ANDROID,
       },
-    });
+    }));
   } catch (error) {
     console.error('Erro ao agendar notificação:', error);
-    return null;
   }
+  return ids;
 };
 
 // Cria os itens (um por horário) e agenda os lembretes.
@@ -126,12 +168,12 @@ const criarItens = async (dados, grupoId, anteriores = []) => {
     const hora = horarios[i];
     const id = String(base + i);
     const anterior = anteriores.find(a => a.horario === hora);
-    const notificacaoId = await agendarNotificacao(dados.nome, dados.dose, hora, id);
+    const notificacaoIds = await agendarLembretes(dados.nome, dados.dose, hora, id, duracaoBase);
 
     itens.push({
       id,
       grupoId,
-      notificacaoId,
+      notificacaoIds,
       nome: dados.nome,
       dose: dados.dose,
       horario: hora,
@@ -146,6 +188,25 @@ const criarItens = async (dados, grupoId, anteriores = []) => {
   return itens;
 };
 
+// Marca como tomada, no histórico, uma dose de um dia que já passou (ex.: "Tomei" tocado no dia seguinte).
+// Devolve true só se encontrou a dose e ela ainda estava como não tomada.
+const registrarDoseDeDiaAnterior = async (data, nome, horario) => {
+  try {
+    const salvo = await AsyncStorage.getItem(HISTORICO_KEY);
+    const historico = salvo ? JSON.parse(salvo) : [];
+    const dose = historico
+      .find(h => h.data === data)
+      ?.itens.find(i => i.nome === nome && i.horario === horario && !i.tomado);
+    if (!dose) return false;
+    dose.tomado = true;
+    await AsyncStorage.setItem(HISTORICO_KEY, JSON.stringify(historico));
+    return true;
+  } catch (error) {
+    console.error('Erro ao atualizar histórico:', error);
+    return false;
+  }
+};
+
 // Virada de dia: arquiva o dia anterior, zera "tomado" e remove tratamentos encerrados
 const processarVirada = async (lista, dataAnterior) => {
   const hoje = hojeStr();
@@ -154,17 +215,28 @@ const processarVirada = async (lista, dataAnterior) => {
 
   if (novoDia) {
     if (lista.length > 0) {
+      const resumo = (m, tomado) => ({ nome: m.nome, dose: m.dose, horario: m.horario, tomado });
+
+      // O último dia em que o app foi usado, com o que realmente foi marcado
+      const novas = [{ data: dataAnterior, itens: lista.map(m => resumo(m, !!m.tomado)) }];
+
+      // Dias em que o app não foi aberto: as doses programadas contam como não tomadas
+      const ativos = lista.filter(m => !(m.duracao?.tipo === 'quantidade' && m.duracao.atual === 0));
+      for (const data of diasEntre(dataAnterior, hoje).slice(-MAX_DIAS_HISTORICO)) {
+        const doDia = ativos.filter(m => !(m.duracao?.tipo === 'dias' && m.duracao.fim && m.duracao.fim < data));
+        if (doDia.length > 0) {
+          novas.push({ data, semAbertura: true, itens: doDia.map(m => resumo(m, false)) });
+        }
+      }
+
       const historicoSalvo = await AsyncStorage.getItem(HISTORICO_KEY);
-      const historico = (historicoSalvo ? JSON.parse(historicoSalvo) : [])
-        .filter(h => h.data !== dataAnterior);
-      historico.unshift({
-        data: dataAnterior,
-        itens: lista.map(m => ({ nome: m.nome, dose: m.dose, horario: m.horario, tomado: !!m.tomado })),
-      });
-      await AsyncStorage.setItem(
-        HISTORICO_KEY,
-        JSON.stringify(historico.slice(0, MAX_DIAS_HISTORICO))
-      );
+      const antigos = historicoSalvo ? JSON.parse(historicoSalvo) : [];
+      const datasNovas = new Set(novas.map(n => n.data));
+      const historico = [...novas, ...antigos.filter(h => !datasNovas.has(h.data))]
+        .sort((a, b) => b.data.localeCompare(a.data))
+        .slice(0, MAX_DIAS_HISTORICO);
+
+      await AsyncStorage.setItem(HISTORICO_KEY, JSON.stringify(historico));
     }
     nova = lista.map(m => ({ ...m, tomado: false }));
   }
@@ -248,6 +320,7 @@ export default function GerenciadorMedicamentos() {
       return {
         ...m,
         notificacaoId: esgotou ? null : m.notificacaoId,
+        notificacaoIds: esgotou ? [] : m.notificacaoIds,
         duracao: {
           ...m.duracao,
           avisado: esgotou ? true : m.duracao.avisado,
@@ -334,17 +407,18 @@ export default function GerenciadorMedicamentos() {
   }, []);
 
   // `forcar` = true/false define o estado; sem ele, alterna. O estoque é do tratamento todo.
-  const atualizarTomado = useCallback((id, forcar) => {
+  // `diaAnterior` = a dose já foi registrada no histórico de outro dia: só desconta o estoque.
+  const atualizarTomado = useCallback((id, forcar, { diaAnterior = false } = {}) => {
     setMedicamentos(prev => {
       const alvo = prev.find(m => m.id === id);
       if (!alvo) return prev;
-      const novoTomado = typeof forcar === 'boolean' ? forcar : !alvo.tomado;
-      if (novoTomado === alvo.tomado) return prev;
+      const novoTomado = diaAnterior ? true : typeof forcar === 'boolean' ? forcar : !alvo.tomado;
+      if (!diaAnterior && novoTomado === alvo.tomado) return prev;
       const controlaEstoque = alvo.duracao?.tipo === 'quantidade';
 
       return prev.map(med => {
         let atualizado = med;
-        if (med.id === id) {
+        if (!diaAnterior && med.id === id) {
           atualizado = { ...atualizado, tomado: novoTomado };
         }
         if (controlaEstoque && med.grupoId === alvo.grupoId && med.duracao) {
@@ -392,10 +466,24 @@ export default function GerenciadorMedicamentos() {
       if (jaTratada === chave) return;
       await AsyncStorage.setItem(RESPOSTA_KEY, chave);
 
-      const itemId = resposta.notification.request.content.data?.itemId;
-      if (itemId) atualizarTomado(itemId, true);
+      // Garante que a virada de dia já foi processada antes de decidir em que dia a dose entra
+      await verificarVirada();
+
+      const dados = resposta.notification.request.content.data || {};
+      if (!dados.itemId) return;
+
+      // `date` pode vir em segundos ou milissegundos, dependendo da plataforma
+      const bruto = resposta.notification.date;
+      const ms = bruto < 1e11 ? bruto * 1000 : bruto;
+      const dataNotificacao = Number.isFinite(ms) ? formatarData(new Date(ms)) : hojeStr();
+
+      if (!dados.horario || dataNotificacao === hojeStr()) {
+        atualizarTomado(dados.itemId, true);
+      } else if (await registrarDoseDeDiaAnterior(dataNotificacao, dados.nome, dados.horario)) {
+        atualizarTomado(dados.itemId, true, { diaAnterior: true });
+      }
     })();
-  }, [resposta, carregado, atualizarTomado]);
+  }, [resposta, carregado, atualizarTomado, verificarVirada]);
 
   const fecharModal = () => {
     setModalVisivel(false);
