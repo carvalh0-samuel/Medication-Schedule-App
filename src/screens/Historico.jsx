@@ -119,6 +119,9 @@ export default function Historico() {
           </View>
         </View>
         <Text style={styles.detalhes}>{tomados} de {total} doses tomadas</Text>
+        {item.semAbertura && (
+          <Text style={styles.avisoSemAbertura}>App não foi aberto neste dia</Text>
+        )}
 
         {aberto && (
           <View style={styles.listaDoses}>
@@ -257,6 +260,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '500'
+  },
+  avisoSemAbertura: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+    fontStyle: 'italic'
   },
   listaDoses: {
     marginTop: 12,
