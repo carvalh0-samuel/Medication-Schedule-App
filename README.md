@@ -52,11 +52,13 @@ Cada dose pertence a um tratamento (`grupoId`). Na virada do dia, o dia anterior
 # ⚠️ Limitações Conhecidas
 O estoque considera 1 comprimido por dose tomada.
 
-O dia só é arquivado no histórico quando o app é aberto ou volta ao primeiro plano.
+O histórico é atualizado quando o app é aberto ou volta ao primeiro plano. Dias em que o app não foi aberto entram como "não tomados", pois não há como saber se a dose foi tomada.
+
+O botão "Tomei" da notificação registra a dose no dia em que a notificação chegou, mesmo que seja tocado só no dia seguinte (vale para lembretes criados nesta versão).
+
+Tratamentos por dias agendam um lembrete para cada dia até o último dia (até 100 por horário); acima disso usam o lembrete diário simples, que só é cancelado quando o app é aberto depois do fim do tratamento.
 
 Os lembretes dependem das permissões de notificação e das otimizações de bateria do aparelho.
 
 # 📱 Capturas de Tela:
-<div align="center">
-<img src="./screenshots/screenshot_01.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_02.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_03.jpeg" alt="Tela Principal" width="200" />  <img src="./screenshots/screenshot_04.jpeg" alt="Tela Principal" width="200" />
-</div>
+<img src="./screenshots/screenshot_01.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_02.jpeg" alt="Tela Principal" width="300" />  <img src="./screenshots/screenshot_03.jpeg" alt="Tela Principal" width="300" />
